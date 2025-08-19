@@ -3,22 +3,35 @@ name: JH Build base images
 on:
   pull_request:
     branches: ["master-jethub"]
+  push:
+    branches: ["master-jethub"]
+    paths:
+      - ".github/workflows/builder.yml"
+      - "Dockerfile"
+      - "patches/**"
+      - "requirements.txt"
+      - "rootfs/**"
   release:
     types: ["published"]
 
 env:
-  BUILD_TYPE: base
+  ARCHITECTURES: '["amd64", "aarch64"]'
+  BUILD_TYPE: generic
+  IMAGE_NAME: homeassistant-base
+
+permissions:
+  contents: read
 
 jobs:
   init:
     name: Initialize build
     runs-on: ${{ vars.RUNNER }}
     outputs:
-      architectures: ${{ steps.info.outputs.architectures }}
       version: ${{ steps.version.outputs.version }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
     - name: Checkout the repository
-      uses: actions/checkout@v4.2.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         fetch-depth: 0
 
@@ -32,63 +45,79 @@ jobs:
       with:
         type: ${{ env.BUILD_TYPE }}
 
+    - name: Get build matrix
+      id: matrix
+      uses: jethome-homeassistant/builder/actions/prepare-multi-arch-matrix@62a1597b84b3461abad9816d9cd92862a2b542c3 # 2026.03.2
+      with:
+        architectures: ${{ env.ARCHITECTURES }}
+        image-name: ${{ env.IMAGE_NAME }}
+
   build:
     name: Build ${{ matrix.arch }} base image
     needs: init
-    runs-on: ${{ vars.RUNNER }}
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
       id-token: write
       packages: write
     strategy:
-      matrix:
-        arch: ${{ fromJson(needs.init.outputs.architectures) }}
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.init.outputs.matrix) }}
     steps:
     - name: Checkout the repository
-      uses: actions/checkout@v4.2.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+          persist-credentials: false
 
-    - name: Get changed files
-      id: changed_files
+    - name: Check if requirements or workflow has changed
+      uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47
       if: github.event_name != 'release'
-      uses: jitterbit/get-changed-files@v1
+      id: wheels_deps_changed
+      with:
+        files: |
+          requirements.txt
+          .github/workflows/jh-builder.yml
 
-    - name: Check if requirements files changed
-      id: requirements
-      run: |
-        echo "changed=true" >> $GITHUB_OUTPUT # Always build wheels on push
-        if [[ "${{ steps.changed_files.outputs.all }}" =~ requirements.txt ]]; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Build wheels cp313
-      uses: jethome-homeassistant/wheels@2025.03.0
-      if: github.event_name == 'release' || steps.requirements.outputs.changed == 'true'
+    - name: Build wheels cp314
+      uses: jethome-homeassistant/wheels@2025.12.0
+      if: github.event_name == 'release' || steps.wheels_deps_changed.outputs.any_changed == 'true'
       with:
         tag: musllinux_1_2
-        abi: cp313
+        abi: cp314
         arch: ${{ matrix.arch }}
         wheels-key: ${{ secrets.WHEELS_KEY }}
         apk: "mariadb-dev;postgresql-dev;libffi-dev"
         requirements: "requirements.txt"
 
-    - name: Login to GitHub Container Registry
-      if: github.event_name == 'release'
-      uses: docker/login-action@v3.4.0
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Set build arguments
-      if: github.event_name != 'release'
-      run: echo "BUILD_ARGS=--test" >> $GITHUB_ENV
-
     - name: Build base image
-      uses: jethome-homeassistant/builder@2025.11.0
+      uses: jethome-homeassistant/builder/actions/build-image@62a1597b84b3461abad9816d9cd92862a2b542c3 # 2026.03.2
       with:
-        args: |
-          $BUILD_ARGS \
-          --${{ matrix.arch }} \
-          --target /data \
-          --cosign \
-          --generic ${{ needs.init.outputs.version }}
+        arch: ${{ matrix.arch }}
+        container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+        cosign-base-identity: 'https://github.com/jethome-homeassistant/docker-base/.*'
+        cosign-base-verify: ghcr.io/jethome-homeassistant/base-python:3.14-alpine3.22
+        image: ${{ matrix.image }}
+        image-tags: |
+          ${{ needs.init.outputs.version }}
+          latest
+        push: ${{ github.event_name == 'release' }}
+        version: ${{ needs.init.outputs.version }}
+
+  manifest:
+    name: Publish multi-arch manifest
+    needs: [init, build]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - name: Publish multi-arch manifest
+        uses: jethome-homeassistant/builder/actions/publish-multi-arch-manifest@62a1597b84b3461abad9816d9cd92862a2b542c3 # 2026.03.2
+        with:
+          architectures: ${{ env.ARCHITECTURES }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tags: |
+            ${{ needs.init.outputs.version }}
+            latest
