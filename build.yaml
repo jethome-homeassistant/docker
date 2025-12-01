@@ -1,16 +1,16 @@
-image: ghcr.io/home-assistant/{arch}-homeassistant-base
+image: ghcr.io/jethome-homeassistant/{arch}-homeassistant-base
 build_from:
-  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.13-alpine3.22-2025.11.3
-  amd64: ghcr.io/home-assistant/amd64-base-python:3.13-alpine3.22-2025.11.3
+  aarch64: ghcr.io/jethome-homeassistant/aarch64-base-python:3.13-alpine3.22-2025.11.3
+  amd64: ghcr.io/jethome-homeassistant/amd64-base-python:3.13-alpine3.22-2025.11.3
 cosign:
-  base_identity: https://github.com/home-assistant/docker-base/.*
-  identity: https://github.com/home-assistant/docker/.*
+  base_identity: https://github.com/jethome-homeassistant/docker-base/.*
+  identity: https://github.com/jethome-homeassistant/docker/.*
 labels:
   io.hass.type: homeassistant-base
-  org.opencontainers.image.title: Home Assistant Core baseimage
+  org.opencontainers.image.title: JH Home Assistant Core baseimage
   org.opencontainers.image.description: Baseimage for Home Assistant Core container/supervisor installation
-  org.opencontainers.image.source: https://github.com/home-assistant/docker
-  org.opencontainers.image.authors: The Home Assistant Authors
+  org.opencontainers.image.source: https://github.com/jethome-homeassistant/docker
+  org.opencontainers.image.authors: The Home Assistant Authors (JetHome patched)
   org.opencontainers.image.url: https://www.home-assistant.io/
   org.opencontainers.image.documentation: https://www.home-assistant.io/docs/
   org.opencontainers.image.licenses: Apache License 2.0
